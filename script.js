@@ -1,269 +1,199 @@
 ///////////////
-// PARAMETRS //
+// PARAMETERS //
 ///////////////
 
 const queryString = window.location.search;
 const urlParams = new URLSearchParams(queryString);
 
-const client_id = urlParams.get("client_id") || "";
-const client_secret = urlParams.get("client_secret") || "";
-let refresh_token = urlParams.get("refresh_token") || "";
-let access_token = "";
+// Add your Last.fm credentials here, or pass them in the OBS browser source URL
+const LASTFM_USER = urlParams.get("lastfm_user") || "YOUR_LASTFM_USERNAME";
+const LASTFM_API_KEY = urlParams.get("lastfm_api_key") || "YOUR_LASTFM_API_KEY";
 
-const visibilityDuration = urlParams.get("duration") || 0;
-const hideAlbumArt = urlParams.has("hideAlbumArt");
+// Existing overlay parameters
+const visibilityDuration = urlParams.get("duration") || 0;[cite: 2]
+const hideAlbumArt = urlParams.has("hideAlbumArt");[cite: 2]
 
-let currentState = false;
-let currentSongUri = "";
+let currentState = false;[cite: 2]
+let currentSongUri = "";[cite: 2]
 
 
+//////////////////
+// LAST.FM API  //
+//////////////////
 
-/////////////////
-// SPOTIFY API //
-/////////////////
-
-// Update the access token - this expires so needs to be refreshed with refresh_token
-async function RefreshAccessToken() {
-	console.debug(`Client ID: ${client_id}`);
-	console.debug(`Client Secret: ${client_secret}`);
-	console.debug(`Refresh Token: ${refresh_token}`);
-
-    let body = "grant_type=refresh_token";
-    body += "&refresh_token=" + refresh_token;
-    body += "&client_id=" + client_id;
-
-	const response = await fetch("https://accounts.spotify.com/api/token", {
-		method: "POST",
-		headers: {
-			'Authorization': `Basic ${btoa(client_id + ":" + client_secret)}`,
-			'Content-Type': 'application/x-www-form-urlencoded'
-		},
-		body: body
-	});
-
-	// If we got a response, save the access token
-	if (response.ok)
-	{
-		const responseData = await response.json();
-		console.debug(responseData);
-		//refresh_token = responseData.refresh_token;			// Unsure if we need to replace the refresh_token but do it just in case
-		access_token = responseData.access_token;			// Save access token for all future API calls
+async function GetCurrentlyPlaying() {
+	if (LASTFM_USER === "YOUR_LASTFM_USERNAME" || LASTFM_API_KEY === "YOUR_LASTFM_API_KEY") {
+		console.error("Please configure your Last.fm username and API key.");
+		return;
 	}
-	else
-	{
-		console.error(`${response.status}`);
-	}
-}
 
-async function GetCurrentlyPlaying(refreshInterval) {
 	try {
-		// Get the current player information from Spotify
-		const response = await fetch("https://api.spotify.com/v1/me/player/currently-playing", {
-			method: "GET",
-			headers: {
-				'Authorization': `Bearer ${access_token}`,
-				'Content-Type': 'application/json'
-			}
-		})
+		const url = `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${LASTFM_USER}&api_key=${LASTFM_API_KEY}&format=json&limit=1`;
+		const response = await fetch(url);
 	
-		// If we got a response, save the access token
-		if (response.ok)
-		{
-			const responseData = await response.json();
-			console.debug(responseData);
-			UpdatePlayer(responseData);
-		}
-		else
-		{
-			switch (response.status)
-			{
-				case 401:
-					console.debug(`${response.status}`)
-					RefreshAccessToken();
-					break;
-				default:
-					console.error(`${response.status}`)
+		if (response.ok) {
+			const data = await response.json();
+			
+			if (data.recenttracks && data.recenttracks.track && data.recenttracks.track.length > 0) {
+				const track = data.recenttracks.track[0];
+				// Last.fm adds this attribute if the song is currently playing
+				const isPlaying = track['@attr'] && track['@attr'].nowplaying === 'true';
+				
+				UpdatePlayer(track, isPlaying);
+			} else {
+				UpdatePlayer(null, false);
 			}
+		} else {
+			console.error(`Last.fm API Error: ${response.status}`);
 		}
-		// Refresh
-		setTimeout(() => {
-			GetCurrentlyPlaying()
-		}, 1000);
+	} catch (error) {
+		console.debug(error);[cite: 2]
+		SetVisibility(false);[cite: 2]
 	}
-	catch (error)
-	{
-		console.debug(error);
-		SetVisibility(false);
-		
-		// Try again in 2 seconds
-		setTimeout(() => {
-			GetCurrentlyPlaying()
-		}, 2000);
-	}
+
+	// Last.fm rate limits are lenient, but polling every 3-5 seconds is safer than 1 second
+	setTimeout(() => {
+		GetCurrentlyPlaying();
+	}, 4000);
 }
 
-function UpdatePlayer(data) {
-	const isPlaying = data.is_playing;							// The play/pause state of the player
-	const songUri = data.item.uri;
-	const albumArt = data.item.album.images.length > 0 ?
-		`${data.item.album.images[0].url}`
-		: `images/placeholder-album-art.png`;					// The album art URL
-	const artist = `${data.item.artists[0].name}`;				// Name of the artist
-	const name = `${data.item.name}`;							// Name of the song
-	const duration = `${data.item.duration_ms/1000}`;			// The duration of the song in seconds
-	const progress = `${data.progress_ms/1000}`;				// The current position in seconds
+function UpdatePlayer(track, isPlaying) {
+	if (!track) {
+		if (currentState) SetVisibility(false);
+		return;
+	}
+
+	// Map Last.fm data
+	const artist = track.artist['#text'];
+	const name = track.name;
+	// Last.fm image array: index 3 is 'extralarge'
+	const albumArt = track.image[3]['#text'] || `images/placeholder-album-art.png`;[cite: 2]
+	const songId = `${name}-${artist}`; // Unique ID since Last.fm doesn't provide Spotify URIs
 
 	// Set the visibility of the player, but only if the state is different than the last time we checked
-	if (isPlaying != currentState) {
+	if (isPlaying != currentState) {[cite: 2]
+		if (!isPlaying) {[cite: 2]
+			console.debug("Hiding player...");[cite: 2]
+			SetVisibility(false);[cite: 2]
+		} else {[cite: 2]
+			console.debug("Showing player...");[cite: 2]
+			setTimeout(() => {[cite: 2]
+				SetVisibility(true);[cite: 2]
 
-		// Set player visibility
-		if (!isPlaying)
-		{
-			console.debug("Hiding player...");
-			SetVisibility(false);
-		}
-		else
-		{
-			console.debug("Showing player...");
-			setTimeout(() => {
-				SetVisibility(true);
-
-				if (visibilityDuration > 0) {
-					setTimeout(() => {
-						SetVisibility(false, false);
-					}, visibilityDuration * 1000);
+				if (visibilityDuration > 0) {[cite: 2]
+					setTimeout(() => {[cite: 2]
+						SetVisibility(false, false);[cite: 2]
+					}, visibilityDuration * 1000);[cite: 2]
 				}
-			}, 500);
+			}, 500);[cite: 2]
 		}
 	}
 
-	if (songUri != currentSongUri) {		
+	if (songId != currentSongUri) {		
 		if (isPlaying) {
-			console.debug("Showing player...");
-			setTimeout(() => {
-				SetVisibility(true);
+			console.debug("Updating song data...");
+			setTimeout(() => {[cite: 2]
+				SetVisibility(true);[cite: 2]
 
-				if (visibilityDuration > 0) {
-					setTimeout(() => {
-						SetVisibility(false, false);
-					}, visibilityDuration * 1000);
+				if (visibilityDuration > 0) {[cite: 2]
+					setTimeout(() => {[cite: 2]
+						SetVisibility(false, false);[cite: 2]
+					}, visibilityDuration * 1000);[cite: 2]
 				}
-			}, 500);
+			}, 500);[cite: 2]
 	
-			currentSongUri = songUri;
+			currentSongUri = songId;
+			
+			// Set thumbnail
+			UpdateAlbumArt(document.getElementById("albumArt"), albumArt);[cite: 2]
+			UpdateAlbumArt(document.getElementById("backgroundImage"), albumArt);[cite: 2]
+
+			// Set song info[cite: 2]
+			UpdateTextLabel(document.getElementById("artistLabel"), artist);[cite: 2]
+			UpdateTextLabel(document.getElementById("songLabel"), name);[cite: 2]
+			
+			setTimeout(() => {[cite: 2]
+				document.getElementById("albumArtBack").src = albumArt;[cite: 2]
+				document.getElementById("backgroundImageBack").src = albumArt;[cite: 2]
+			}, 1000);[cite: 2]
 		}
 	}
 
-	// Set thumbnail
-	UpdateAlbumArt(document.getElementById("albumArt"), albumArt);
-	UpdateAlbumArt(document.getElementById("backgroundImage"), albumArt);
-
-	// Set song info
-	UpdateTextLabel(document.getElementById("artistLabel"), artist);
-	UpdateTextLabel(document.getElementById("songLabel"), name);
-	
-	// Set progressbar
-	const progressPerc = ((progress / duration) * 100);			// Progress expressed as a percentage
-	const progressTime = ConvertSecondsToMinutesSoThatItLooksBetterOnTheOverlay(progress);
-	const timeRemaining = ConvertSecondsToMinutesSoThatItLooksBetterOnTheOverlay(duration - progress);
-	console.debug(`Progress: ${progressTime}`);
-	console.debug(`Time Remaining: ${timeRemaining}`);
-	document.getElementById("progressBar").style.width = `${progressPerc}%`;
-	document.getElementById("progressTime").innerHTML = progressTime;
-	document.getElementById("timeRemaining").innerHTML = `-${timeRemaining}`;
-
-	setTimeout(() => {
-		document.getElementById("albumArtBack").src = albumArt;
-		document.getElementById("backgroundImageBack").src = albumArt;
-	}, 1000);
+	// NOTE: Last.fm does not provide real-time millisecond progress.
+	// Hiding the progress text and locking the bar so it doesn't break the UI.
+	document.getElementById("progressBar").style.width = `100%`;
+	document.getElementById("progressTime").innerHTML = "";
+	document.getElementById("timeRemaining").innerHTML = "";
 }
 
-function UpdateTextLabel(div, text) {
-	if (div.innerText != text) {
-		div.setAttribute("class", "text-fade");
-		setTimeout(() => {
-			div.innerText = text;
-			div.setAttribute("class", ".text-show");
-		}, 500);
+function UpdateTextLabel(div, text) {[cite: 2]
+	if (div.innerText != text) {[cite: 2]
+		div.setAttribute("class", "text-fade");[cite: 2]
+		setTimeout(() => {[cite: 2]
+			div.innerText = text;[cite: 2]
+			div.setAttribute("class", "text-show"); // Fixed the stray dot from the original code
+		}, 500);[cite: 2]
 	}
 }
 
-function UpdateAlbumArt(div, imgsrc) {
-	if (div.src != imgsrc) {
-		div.setAttribute("class", "text-fade");
-		setTimeout(() => {
-			div.src = imgsrc;
-			div.setAttribute("class", "text-show");
-		}, 500);
+function UpdateAlbumArt(div, imgsrc) {[cite: 2]
+	if (div.src != imgsrc) {[cite: 2]
+		div.setAttribute("class", "text-fade");[cite: 2]
+		setTimeout(() => {[cite: 2]
+			div.src = imgsrc;[cite: 2]
+			div.setAttribute("class", "text-show");[cite: 2]
+		}, 500);[cite: 2]
 	}
 }
-
-
 
 //////////////////////
 // HELPER FUNCTIONS //
 //////////////////////
 
-function ConvertSecondsToMinutesSoThatItLooksBetterOnTheOverlay(time) {
-	const minutes = Math.floor(time / 60);
-	const seconds = Math.trunc(time - minutes * 60);
+function SetVisibility(isVisible, updateCurrentState = true) {[cite: 2]
+	widgetVisibility = isVisible;[cite: 2]
+	const mainContainer = document.getElementById("mainContainer");[cite: 2]
 
-	return `${minutes}:${('0' + seconds).slice(-2)}`;
-}
-
-function SetVisibility(isVisible, updateCurrentState = true) {
-	widgetVisibility = isVisible;
-
-	const mainContainer = document.getElementById("mainContainer");
-
-	if (isVisible) {
-		mainContainer.style.opacity = 1;
-		mainContainer.style.bottom = "50%";
-	}
-	else {
-		mainContainer.style.opacity = 0;
-		mainContainer.style.bottom = "calc(50% - 20px)";
+	if (isVisible) {[cite: 2]
+		mainContainer.style.opacity = 1;[cite: 2]
+		mainContainer.style.bottom = "50%";[cite: 2]
+	} else {[cite: 2]
+		mainContainer.style.opacity = 0;[cite: 2]
+		mainContainer.style.bottom = "calc(50% - 20px)";[cite: 2]
 	}
 
-	if (updateCurrentState)
-		currentState = isVisible;
+	if (updateCurrentState)[cite: 2]
+		currentState = isVisible;[cite: 2]
 }
-
-
 
 //////////////////////////////////////////////////////////////////////////////////////////
-// RESIZER THING BECAUSE I THINK I KNOW HOW RESPONSIVE DESIGN WORKS EVEN THOUGH I DON'T //
+// RESIZER THING BECAUSE I THINK I KNOW HOW RESPONSIVE DESIGN WORKS EVEN THOUGH I DON'T //[cite: 2]
 //////////////////////////////////////////////////////////////////////////////////////////
 
-let outer = document.getElementById('mainContainer'),
-	maxWidth = outer.clientWidth+50,
-	maxHeight = outer.clientHeight;
+let outer = document.getElementById('mainContainer'),[cite: 2]
+	maxWidth = outer.clientWidth+50,[cite: 2]
+	maxHeight = outer.clientHeight;[cite: 2]
 
-window.addEventListener("resize", resize);
+window.addEventListener("resize", resize);[cite: 2]
+resize();[cite: 2]
 
-resize();
-function resize() {
-	const scale = window.innerWidth / maxWidth;
-	outer.style.transform = 'translate(-50%, 50%) scale(' + scale + ')';
+function resize() {[cite: 2]
+	const scale = window.innerWidth / maxWidth;[cite: 2]
+	outer.style.transform = 'translate(-50%, 50%) scale(' + scale + ')';[cite: 2]
 }
 
-
-
 /////////////////////////////////////////////////////////////////////
-// IF THE USER PUT IN THE HIDEALBUMART PARAMATER, THEN YOU SHOULD  //
-//   HIDE THE ALBUM ART, BECAUSE THAT'S WHAT IT'S SUPPOSED TO DO   //
+// IF THE USER PUT IN THE HIDEALBUMART PARAMATER, THEN YOU SHOULD  //[cite: 2]
+//   HIDE THE ALBUM ART, BECAUSE THAT'S WHAT IT'S SUPPOSED TO DO   //[cite: 2]
 /////////////////////////////////////////////////////////////////////
 
-if (hideAlbumArt) {
-	document.getElementById("albumArtBox").style.display = "none";
-	document.getElementById("songInfoBox").style.width = "calc(100% - 20px)";
+if (hideAlbumArt) {[cite: 2]
+	document.getElementById("albumArtBox").style.display = "none";[cite: 2]
+	document.getElementById("songInfoBox").style.width = "calc(100% - 20px)";[cite: 2]
 }
 
-
-
 ////////////////////////////////
-// KICK OFF THE WHOLE WIDGET  //
+// KICK OFF THE WHOLE WIDGET  //[cite: 2]
 ////////////////////////////////
 
-RefreshAccessToken();
-GetCurrentlyPlaying();			// This is a recursive function, so just run it once
+GetCurrentlyPlaying(); // This is a recursive function, so just run it once[cite: 2]
