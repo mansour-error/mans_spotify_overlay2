@@ -67,7 +67,7 @@ function UpdatePlayer(track, isPlaying) {
 	const artist = track.artist['#text'];
 	const name = track.name;
 	// Last.fm image array: index 3 is 'extralarge'
-	const albumArt = track.image[3]['#text'] || `images/placeholder-album-art.png`;[cite: 2]
+	const albumArt = track?.image?.[3]?.['#text'] || `images/placeholder-album-art.png`;
 	const songId = `${name}-${artist}`; // Unique ID since Last.fm doesn't provide Spotify URIs
 
 	// Set the visibility of the player, but only if the state is different than the last time we checked
@@ -121,9 +121,7 @@ function UpdatePlayer(track, isPlaying) {
 
 	// NOTE: Last.fm does not provide real-time millisecond progress.
 	// Hiding the progress text and locking the bar so it doesn't break the UI.
-	document.getElementById("progressBar").style.width = `100%`;
-	document.getElementById("progressTime").innerHTML = "";
-	document.getElementById("timeRemaining").innerHTML = "";
+
 }
 
 function UpdateTextLabel(div, text) {[cite: 2]
