@@ -44,22 +44,21 @@
 	let browserSourceURL = "";
 
 	function GenerateURL() {
-		const user = document.getElementById("username_box").value.trim();
-		const key = document.getElementById("apikey_box").value.trim();
-		
-		if(!user || !key) {
-			alert("Please enter both your Last.fm username and API key.");
-			return;
-		}
+    const user = document.getElementById("username_box").value.trim();
+    const key = document.getElementById("apikey_box").value.trim();
+    
+    if(!user || !key) {
+        alert("Please enter both your Last.fm username and API key.");
+        return;
+    }
 
-		// Dynamically build the URL pointing to your index.html
-		let baseURL = window.location.href.replace("index (1).html", "index.html");
-		baseURL = baseURL.split('?')[0]; // Strip any old query parameters
-		
-		browserSourceURL = `${baseURL}?lastfm_user=${encodeURIComponent(user)}&lastfm_api_key=${encodeURIComponent(key)}`;
-		
-		document.getElementById("authorizationBox").style.display = 'block';
-	}
+    // Hardcode the base URL to point directly to the main widget
+    const baseURL = "https://mansour-error.github.io/mans_spotify_overlay2/";
+    
+    browserSourceURL = `${baseURL}?lastfm_user=${encodeURIComponent(user)}&lastfm_api_key=${encodeURIComponent(key)}`;
+    
+    document.getElementById("authorizationBox").style.display = 'block';
+}
 
 	function CopyToURL() {
 		navigator.clipboard.writeText(browserSourceURL);
