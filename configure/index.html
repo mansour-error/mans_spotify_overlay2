@@ -1,7 +1,6 @@
 <!DOCTYPE html>
-
 <head>
-	<title>Configure</title>
+	<title>Configure Last.fm Overlay</title>
 	<meta charset="UTF-8">
 	<link rel="shortcut icon" href="#" />
 	<link rel="stylesheet" href="./style.css" />
@@ -11,39 +10,69 @@
 	<div id="mainContainer">
 		<div id="connectBox">
 			<div style="text-align: center;">
-				<img src="logo.webp" width="60%">
+				<h2 style="color: white; font-family: sans-serif;">Last.fm Overlay Setup</h2>
 			</div>
 			<label>
 				<br>
-				<span style="font-weight: 500;">Client ID</span>
+				<span style="font-weight: 500;">Last.fm Username</span>
 				<br>
-				<input type="text" id="client_id_box">
+				<input type="text" id="username_box">
 				<br><br>
-				<span style="font-weight: 500;">Client Secret</span>
+				<span style="font-weight: 500;">Last.fm API Key</span>
 				<br>
-				<input type="password" id="client_secret_box">
+				<input type="text" id="apikey_box">
 
 				<br><br>
 
-				<button id="authorizeButton" onclick="RequestAuthorization()">Authorize</button>
-				<br><br>
-				<button id="instructionsButton" onclick="OpenInstructions()">Instructions</button>
+				<button id="generateButton" onclick="GenerateURL()">Generate OBS URL</button>
 			</label>
 		</div>
-		<div id="authorizationBox">
+		
+		<div id="authorizationBox" style="display: none; text-align: center; margin-top: 20px;">
 			<label id="authorizationComplete">
-				<img src="logo.webp" width="60%">
-				<br>
-				<br>
-				<span style="font-weight: 500; font-size: 30px;">Authorization complete</span>
+				<span style="font-weight: 500; font-size: 20px;">URL Generated!</span>
 				<br><br>
-				You now owe me money for all of my hard work.
+				Paste this into your OBS Browser Source.
 			</label>
-			<button id="copyURLButton" onclick="CopyToURL()">Click to copy URL</button>
 			<br><br>
-			<button id="donateButton" onclick="OpenDonationPage()">Donate out of guilt</button>
+			<button id="copyURLButton" onclick="CopyToURL()">Click to copy URL</button>
 		</div>
 	</div>
 </body>
 
-<script src="./script.js"></script>
+<script>
+	let browserSourceURL = "";
+
+	function GenerateURL() {
+		const user = document.getElementById("username_box").value.trim();
+		const key = document.getElementById("apikey_box").value.trim();
+		
+		if(!user || !key) {
+			alert("Please enter both your Last.fm username and API key.");
+			return;
+		}
+
+		// Dynamically build the URL pointing to your index.html
+		let baseURL = window.location.href.replace("index (1).html", "index.html");
+		baseURL = baseURL.split('?')[0]; // Strip any old query parameters
+		
+		browserSourceURL = `${baseURL}?lastfm_user=${encodeURIComponent(user)}&lastfm_api_key=${encodeURIComponent(key)}`;
+		
+		document.getElementById("authorizationBox").style.display = 'block';
+	}
+
+	function CopyToURL() {
+		navigator.clipboard.writeText(browserSourceURL);
+
+		const copyBtn = document.getElementById("copyURLButton");
+		copyBtn.innerText = "Copied to clipboard";
+		copyBtn.style.backgroundColor = "#00dd63";
+		copyBtn.style.color = "#ffffff";
+
+		setTimeout(() => {
+			copyBtn.innerText = "Click to copy URL";
+			copyBtn.style.backgroundColor = "";
+			copyBtn.style.color = "";
+		}, 3000);
+	}
+</script>
